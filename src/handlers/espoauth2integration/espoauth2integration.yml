@@ -1,0 +1,594 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'esp-oauth2-integration'
+
+Globals:
+  Function:
+    # Every lambda function name should have prefix 'esp-Oauth2'
+    # Every lambda function name must be added to 'availableFunctions' list in updateenv.go
+    Timeout: 30
+    Runtime: go1.x
+    Tags:
+      created-by: Espressif-rainmaker
+    Environment:
+      Variables:
+        REGION: !Sub "${AWS::Region}"
+        ACCOUNT_ID: !Sub "${AWS::AccountId}"
+        STAGE_NAME: !Ref StageName
+        TIME_TO_LIVE: 300 #in secs
+        LOG_LEVEL: Debug
+        COGNITO_USER_POOL_ID: !ImportValue esp-CognitoUserPool
+        COGNITO_APP_CLIENT_ID: !ImportValue esp-CognitoUserPoolClient
+        Rainmaker_Oauth2_Authorize_URL:   !Ref RainmakerOauth2AuthorizeUrl
+        Rainmaker_Oauth2_Token_URL: !Ref RainmakerOauth2TokenUrl
+        Rainmaker_Oauth2_UserInfo_URL:  !Ref RainmakerOauth2UserInfoUrl
+        Rainmaker_Oauth2_Email_URL: !Ref RainmakerOauth2EmailUrl
+        ACCEPT_APPLICATION_JSON: application/vnd.github.v3+json
+
+Parameters:
+  StageName:
+    Type: String
+    Default: dev
+  RainmakerOauth2AuthorizeUrl:
+    Type: String
+    Default: Enter authorize url for oauth2 integration
+  RainmakerOauth2TokenUrl:
+    Type: String
+    Default: Enter token url for oauth2 integration
+  RainmakerOauth2UserInfoUrl:
+    Type: String
+    Default: Enter userinfo url for oauth2 integration
+  RainmakerOauth2EmailUrl:
+    Type: String
+    Default: Enter email url for oauth2 integration (optional)
+
+Metadata:
+  AWS::ServerlessRepo::Application:
+    Name: ESP-Rainmaker-OAuth2-Integration
+    Description: SAR ESP Rainmaker OAuth2 Integration
+    Author: Espressif
+    SemanticVersion: 1.0.0
+    ReadmeUrl: README.md
+
+Resources:
+  OauthIntegrationLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: esp-OauthIntegrationLambdaExecutionRole
+      Tags:
+        - Key: created-by
+          Value: Espressif-rainmaker
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17' 
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: OauthIntegrationLambdaExecutionRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:*
+                Resource: arn:aws:logs:*:*:*
+              - Effect: Allow
+                Action:
+                  - lambda:GetFunctionConfiguration
+                  - lambda:UpdateFunctionConfiguration
+                Resource: arn:aws:lambda:*:*:*
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                Resource:
+                  - !ImportValue esp-CognitoStateTable
+                  - Fn::Join:
+                      - ""
+                      - - !ImportValue esp-UsersTable
+                        - "/index/"
+                        - !ImportValue esp-UsersTableIndexName
+              - Effect: Allow
+                Action:
+                  - cognito-idp:DescribeUserPool
+                Resource:
+                  Fn::Join:
+                    - ""
+                    - - "arn:"
+                      - "aws:"
+                      - "cognito-idp:"
+                      - !Ref 'AWS::Region'
+                      - ":"
+                      - !Ref 'AWS::AccountId'
+                      - ":"
+                      - "userpool/"
+                      - !ImportValue esp-CognitoUserPool
+
+  AuthorizeApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        'Fn::ImportValue': esp-RainmakerApi
+      ParentId:
+        'Fn::ImportValue': esp-RainMakerRootApi
+      PathPart: oauth2_authorize
+
+  AuthorizeMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId: !Ref AuthorizeApiResource
+      RestApiId:
+        'Fn::ImportValue': esp-RainmakerApi
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${Arn}/invocations
+          - Arn:
+              Fn::GetAtt:
+                - Authorize
+                - Arn
+
+  Authorize:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: esp-Oauth2Authorize
+      CodeUri: ../../../bin/handlers/espoauth2integration
+      Handler: authorize
+      Role: !GetAtt OauthIntegrationLambdaExecutionRole.Arn
+
+  AuthorizeLog:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ["", ["/aws/lambda/", "esp-Oauth2Authorize"]]
+      RetentionInDays: 7
+
+  TokenApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        'Fn::ImportValue': esp-RainmakerApi
+      ParentId:
+        'Fn::ImportValue': esp-RainMakerRootApi
+      PathPart: oauth2_token
+
+  TokenMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId: !Ref TokenApiResource
+      RestApiId:
+        'Fn::ImportValue': esp-RainmakerApi
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${Arn}/invocations
+          - Arn:
+              Fn::GetAtt:
+                - Token
+                - Arn
+
+  Token:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: esp-Oauth2Token
+      CodeUri: ../../../bin/handlers/espoauth2integration
+      Handler: token
+      Role: !GetAtt OauthIntegrationLambdaExecutionRole.Arn
+
+  TokenLog:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ["", ["/aws/lambda/", "esp-Oauth2Token"]]
+      RetentionInDays: 7
+
+  Oauth2UserInfoApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        'Fn::ImportValue': esp-RainmakerApi
+      ParentId:
+        'Fn::ImportValue': esp-RainMakerRootApi
+      PathPart: oauth2_userinfo
+
+  UserInfoMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId: !Ref Oauth2UserInfoApiResource
+      RestApiId:
+        'Fn::ImportValue': esp-RainmakerApi
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${Arn}/invocations
+          - Arn:
+              Fn::GetAtt:
+                - UserInfo
+                - Arn
+
+  UserInfo:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: esp-Oauth2UserInfo
+      CodeUri: ../../../bin/handlers/espoauth2integration
+      Handler: userinfo
+      Role: !GetAtt OauthIntegrationLambdaExecutionRole.Arn
+
+  UserInfoLog:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ["", ["/aws/lambda/", "esp-Oauth2UserInfo"]]
+      RetentionInDays: 7
+
+  CognitoCallbackApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        'Fn::ImportValue': esp-RainmakerApi
+      ParentId:
+        'Fn::ImportValue': esp-RainMakerRootApi
+      PathPart: oauth2_cognitocallback
+
+  CognitoCallbackMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId: !Ref CognitoCallbackApiResource
+      RestApiId:
+        'Fn::ImportValue': esp-RainmakerApi
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${Arn}/invocations
+          - Arn:
+              Fn::GetAtt:
+                - CognitoCallback
+                - Arn
+
+  CognitoCallback:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: esp-Oauth2CognitoCallback
+      CodeUri: ../../../bin/handlers/espoauth2integration
+      Handler: cognitocallback
+      Role: !GetAtt OauthIntegrationLambdaExecutionRole.Arn
+
+  CognitoCallbackLog:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ["", ["/aws/lambda/", "esp-Oauth2CognitoCallback"]]
+      RetentionInDays: 7
+
+  UpdateEnvApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        'Fn::ImportValue': esp-RainmakerApi
+      ParentId:
+        'Fn::ImportValue': esp-RainmakerAdminApi
+      PathPart: oauth2_updateenv
+
+  UpdateEnvMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        'Fn::ImportValue': esp-RainmakerAuthorizer
+      AuthorizationScopes:
+        - "com.espressif.rainmaker.oauth/node.read"
+        - "aws.cognito.signin.user.admin"
+      HttpMethod: POST
+      ResourceId: !Ref UpdateEnvApiResource
+      RestApiId:
+        'Fn::ImportValue': esp-RainmakerApi
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${Arn}/invocations
+          - Arn:
+              Fn::GetAtt:
+                - UpdateEnv
+                - Arn
+
+  UpdateEnvOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      ResourceId: !Ref UpdateEnvApiResource
+      RestApiId:
+        'Fn::ImportValue': esp-RainmakerApi
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: True
+            method.response.header.Access-Control-Allow-Methods: True
+            method.response.header.Access-Control-Allow-Origin:  True
+          StatusCode: 200
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: "{\n \"statusCode\": 200\n}"
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,PUT,DELETE,POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin:  "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+            StatusCode: 200
+
+  UpdateEnv:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: esp-Oauth2UpdateEnv
+      CodeUri: ../../../bin/handlers/espoauth2integration
+      Handler: updateenv
+      Role: !GetAtt OauthIntegrationLambdaExecutionRole.Arn
+
+  UpdateEnvLog:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ["", ["/aws/lambda/", "esp-Oauth2UpdateEnv"]]
+      RetentionInDays: 7
+
+  GetEnvApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        'Fn::ImportValue': esp-RainmakerApi
+      ParentId:
+        'Fn::ImportValue': esp-RainmakerAdminApi
+      PathPart: oauth2_getenv
+
+  GetEnvMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        'Fn::ImportValue': esp-RainmakerAuthorizer
+      AuthorizationScopes:
+        - "com.espressif.rainmaker.oauth/node.read"
+        - "aws.cognito.signin.user.admin"
+      HttpMethod: GET
+      ResourceId: !Ref GetEnvApiResource
+      RestApiId:
+        'Fn::ImportValue': esp-RainmakerApi
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${Arn}/invocations
+          - Arn:
+              Fn::GetAtt:
+                - GetEnv
+                - Arn
+
+  GetEnvOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      ResourceId: !Ref GetEnvApiResource
+      RestApiId:
+        'Fn::ImportValue': esp-RainmakerApi
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: True
+            method.response.header.Access-Control-Allow-Methods: True
+            method.response.header.Access-Control-Allow-Origin:  True
+          StatusCode: 200
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: "{\n \"statusCode\": 200\n}"
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,PUT,DELETE,POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin:  "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+            StatusCode: 200
+
+  GetEnv:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: esp-Oauth2GetEnv
+      CodeUri: ../../../bin/handlers/espoauth2integration
+      Handler: updateenv
+      Role: !GetAtt OauthIntegrationLambdaExecutionRole.Arn
+
+  GetEnvLog:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ["", ["/aws/lambda/", "esp-Oauth2GetEnv"]]
+      RetentionInDays: 7
+
+  OauthApiGatewaydeploy:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId:
+        'Fn::ImportValue': esp-RainmakerApi
+      StageName: !Ref StageName
+    DependsOn:
+      - AuthorizeMethod
+      - TokenMethod
+      - UserInfoMethod
+      - CognitoCallbackMethod
+      - UpdateEnvMethod
+      - UpdateEnvOptionsMethod
+      - GetEnvMethod
+      - GetEnvOptionsMethod
+
+  AuthorizeLambdaPermissionApiGateway:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt
+        - Authorize
+        - Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Join
+        - ''
+        - - 'arn:'
+          - !Ref 'AWS::Partition'
+          - ':execute-api:'
+          - !Ref 'AWS::Region'
+          - ':'
+          - !Ref 'AWS::AccountId'
+          - ':'
+          - !ImportValue esp-RainmakerApi
+          - /*/*
+
+  TokenLambdaPermissionApiGateway:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt
+        - Token
+        - Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Join
+        - ''
+        - - 'arn:'
+          - !Ref 'AWS::Partition'
+          - ':execute-api:'
+          - !Ref 'AWS::Region'
+          - ':'
+          - !Ref 'AWS::AccountId'
+          - ':'
+          - !ImportValue esp-RainmakerApi
+          - /*/*
+
+  UserInfoLambdaPermissionApiGateway:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt
+        - UserInfo
+        - Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Join
+        - ''
+        - - 'arn:'
+          - !Ref 'AWS::Partition'
+          - ':execute-api:'
+          - !Ref 'AWS::Region'
+          - ':'
+          - !Ref 'AWS::AccountId'
+          - ':'
+          - !ImportValue esp-RainmakerApi
+          - /*/*
+
+  CognitoCallbackLambdaPermissionApiGateway:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt
+        - CognitoCallback
+        - Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Join
+        - ''
+        - - 'arn:'
+          - !Ref 'AWS::Partition'
+          - ':execute-api:'
+          - !Ref 'AWS::Region'
+          - ':'
+          - !Ref 'AWS::AccountId'
+          - ':'
+          - !ImportValue esp-RainmakerApi
+          - /*/*
+
+  UpdateEnvLambdaPermissionApiGateway:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt
+        - UpdateEnv
+        - Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Join
+        - ''
+        - - 'arn:'
+          - !Ref 'AWS::Partition'
+          - ':execute-api:'
+          - !Ref 'AWS::Region'
+          - ':'
+          - !Ref 'AWS::AccountId'
+          - ':'
+          - !ImportValue esp-RainmakerApi
+          - /*/*
+
+  GetEnvLambdaPermissionApiGateway:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt
+        - GetEnv
+        - Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Join
+        - ''
+        - - 'arn:'
+          - !Ref 'AWS::Partition'
+          - ':execute-api:'
+          - !Ref 'AWS::Region'
+          - ':'
+          - !Ref 'AWS::AccountId'
+          - ':'
+          - !ImportValue esp-RainmakerApi
+          - /*/*
+
+Outputs:
+  Oauth2IssuerApiResource:
+    Value:
+      !ImportValue esp-RainMakerBaseUrl
+  Oauth2AuthorizeApiResource:
+    Value: !Sub
+      - ${Arn}/oauth2_authorize
+      - Arn:  !ImportValue esp-RainMakerBaseUrl
+  Oauth2TokenApiResource:
+    Value: !Sub
+      - ${Arn}/oauth2_token
+      - Arn:  !ImportValue esp-RainMakerBaseUrl
+  Oauth2UserInfoApiResource:
+    Value: !Sub
+      - ${Arn}/oauth2_userinfo
+      - Arn:  !ImportValue esp-RainMakerBaseUrl
+  Oauth2JWKSApiResource:
+    Value: !Sub
+      - ${Arn}/oauth2_jwks
+      - Arn:  !ImportValue esp-RainMakerBaseUrl
+  Oauth2CognitoCallbackURL:
+    Value: !Sub
+      - ${Arn}/oauth2_cognitocallback
+      - Arn:  !ImportValue esp-RainMakerBaseUrl
+
+  Oauth2UpdateEnvApi:
+    Description: API Gateway endpoint to update Rainmaker OAuth2 Urls 
+    Value: !Sub
+      - https://${Arn}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/{version}/admin/oauth2_updateenv
+      - Arn: !ImportValue esp-RainmakerApi
+
+  Oauth2GetEnvApiResource:
+    Description: API Gateway endpoint to fetch Rainmaker OAuth2 Urls 
+    Value: !Sub
+      - https://${Arn}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/{version}/admin/oauth2_getenv
+      - Arn: !ImportValue esp-RainmakerApi
