@@ -92,7 +92,7 @@ Use the above callback url and register your app. After successful registration,
 Following is an example link to get Authentication URL, when Salesforce is used as Identity Provider:
 - Salesforce - https://help.salesforce.com/articleView?id=sf.remoteaccess_oauth_endpoints.htm&type=5
 
-**Note :** Some IDPs call ClientId as AppId and Client Secret Key as App Secret Key. In this documentaion we are using terms ClientId and Client Secret Key.
+**Note :** Some IDPs call ClientId as AppId and Client Secret Key as App Secret Key. In this documentation we are using terms ClientId and Client Secret Key.
 
 ### Configuring the Domain Name in AWS Cognito
 

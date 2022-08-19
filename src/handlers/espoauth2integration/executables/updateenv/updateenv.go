@@ -33,7 +33,7 @@ func updateEnv(req events.APIGatewayProxyRequest) events.APIGatewayProxyResponse
 	// Fetch and update environment (oauth2 urls) for available lambda functions
 	for _, functionName := range availableFunctions {
 
-		// Fetch funtion environment
+		// Fetch function environment
 		functionEnv, getEnvErr := utils.GetLambdaEnv(functionName)
 		if getEnvErr != nil {
 			utils.LogError(TAG + "Error occurred while fetching function environment, function name: " + functionName + " error\t" + getEnvErr.Error())
@@ -62,7 +62,7 @@ func updateEnv(req events.APIGatewayProxyRequest) events.APIGatewayProxyResponse
 
 	apiResponse := models.APIResponse{Status: constants.SUCCESS, Description: constants.UPDATE_OAUTH2_URLS_SUCCESSFUL}
 
-	utils.LogInfo(TAG + "Updated environment for availble lambdas successfully")
+	utils.LogInfo(TAG + "Updated environment for available lambdas successfully")
 
 	js, _ := json.Marshal(apiResponse)
 	return events.APIGatewayProxyResponse{
@@ -117,7 +117,7 @@ func handleRequest(req events.APIGatewayProxyRequest) (events.APIGatewayProxyRes
 	accessToken := req.Headers["Authorization"]
 	superAdmin, errCheckSuperAdmin := utils.IsSuperAdmin(accessToken)
 	if errCheckSuperAdmin != nil {
-		utils.LogError(TAG + "Error occured while cheking if user is super admin, error: " + errCheckSuperAdmin.Error())
+		utils.LogError(TAG + "Error occurred while checking if user is super admin, error: " + errCheckSuperAdmin.Error())
 		return utils.GetServErrRespObject(constants.NOT_AUTHORIZED), nil
 	} else if !superAdmin {
 		utils.LogError(TAG + "User is not super admin")
