@@ -35,7 +35,7 @@ func GetState(key string) (models.State, error) {
 	var result models.State
 	errGetState := utils.DbGetItem(cognitoStateTableConnection, constants.COGNITO_STATE_TABLE, models.State{Key: key}, &result)
 	if errGetState != nil {
-		utils.LogError(TAG + "Error occured while fetching state, error " + errGetState.Error())
+		utils.LogError(TAG + "Error occurred while fetching state, error " + errGetState.Error())
 		return result, errGetState
 	}
 	utils.LogDebug(TAG + "Successfully fetched state")

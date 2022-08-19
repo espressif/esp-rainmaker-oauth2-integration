@@ -2,15 +2,14 @@ package main
 
 import (
 	"constants"
-	"github.com/lithammer/shortuuid"
+	"handlers/espoauth2integration"
 	"handlers/utils"
 	"models"
 	"net/http"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-
-	"handlers/espoauth2integration"
+	"github.com/lithammer/shortuuid"
 )
 
 var CLIENT_ID = "client_id"
@@ -27,7 +26,7 @@ const ERROR_STORE_STATE = "Error in storing cognito state"
 
 /*
 	This lambda is used to form the authorize request and redirect to third party login to authorize the calling user.
- */
+*/
 func authorize(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	TAG := "[authorize] "
 	utils.LogInfo(TAG + request.HTTPMethod + " App Version = " + appVersion + " Authorizing User")
@@ -38,7 +37,7 @@ func authorize(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRes
 	//scope is authorize request scope
 	var scope = request.QueryStringParameters[SCOPE]
 
-	//response_type is auauthorize request response_type
+	//response_type is authorize request response_type
 	var response_type = request.QueryStringParameters[RESPONSE_TYPE]
 
 	var state = request.QueryStringParameters[STATE]

@@ -40,7 +40,7 @@ func postToken(req events.APIGatewayProxyRequest) (events.APIGatewayProxyRespons
 	//Fetch body from request
 	receivedData, errParse := url.ParseQuery(req.Body)
 	if errParse != nil {
-		utils.LogError(TAG + "Error occured while parsing " + errParse.Error())
+		utils.LogError(TAG + "Error occurred while parsing " + errParse.Error())
 		return utils.GetCliErrRespObject(http.StatusBadRequest, ERROR_PARSING), errParse
 	}
 
@@ -63,7 +63,7 @@ func postToken(req events.APIGatewayProxyRequest) (events.APIGatewayProxyRespons
 	//Form token request
 	IDPAccessTokenURL := utils.GetIDPAccessTokenURL()
 
-	//Form request body, previosuly these were query params, to support razer changed it to request body params
+	//Form request body, previously these were query params, to support razer changed it to request body params
 	data := url.Values{}
 	data.Set(GRANT_TYPE, AUTHORIZATION_CODE)
 	data.Set(CODE, code[0])
@@ -86,7 +86,7 @@ func postToken(req events.APIGatewayProxyRequest) (events.APIGatewayProxyRespons
 	//Make request
 	response, errGetAccessToken := client.Do(request)
 	if errGetAccessToken != nil {
-		utils.LogError(TAG + "Error in fetching reponse" + errGetAccessToken.Error())
+		utils.LogError(TAG + "Error in fetching response" + errGetAccessToken.Error())
 		return utils.GetServErrRespObject(ERROR_ACCESS_TOKEN), errGetAccessToken
 	}
 
